@@ -1,0 +1,18 @@
+[package]
+name = "compression_testing"
+version = "0.1.0"
+authors = ["oyvindln <oyvindln@users.noreply.github.com>"]
+
+[dependencies]
+#deflate = { path = "../deflate" }
+deflate = "*"
+#flate2 = { version = "0.2", features = ["zlib"], default-features = false }
+flate2 = "0.2"
+byteorder = "*"
+inflate = "*"
+#inflate = { path = "../inflate" }
+clap = "2.19"
+term = "0.2"
+
+[profile.release]
+debug = true
