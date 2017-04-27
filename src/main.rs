@@ -5,6 +5,8 @@ extern crate inflate;
 extern crate clap;
 extern crate term;
 
+#[macro_use] extern crate pretty_assertions;
+
 use std::{io, fs};
 use std::path::Path;
 use clap::{App, Arg};
@@ -18,17 +20,25 @@ fn get_file_data(name: &Path) -> Vec<u8> {
     use std::fs::File;
     use std::io::Read;
     let mut input = Vec::new();
-    let mut f = File::open(name).unwrap();
-
-    f.read_to_end(&mut input).unwrap();
-    input
+    match File::open(name) {
+        Ok(mut f) => {
+            f.read_to_end(&mut input).unwrap();
+            input
+        },
+        Err(e) => {
+            println!("ERROR: FAILED TO OPEN: {:?}", name);
+            panic!("{}", e);
+        }
+    }
 }
 
 /// Helper function to decompress into a `Vec<u8>`
 fn decompress_to_end(input: &[u8]) -> Vec<u8> {
     use std::str;
+
+    {
     let mut inflater = InflateStream::from_zlib();
-    let mut out = Vec::new();
+    let mut out = Vec::<u8>::new();
     let mut n = 0;
     // println!("input len {}", input.len());
     while n < input.len() {
@@ -38,27 +48,28 @@ fn decompress_to_end(input: &[u8]) -> Vec<u8> {
             n += num_bytes_read;
             out.extend(result);
         } else {
-            println!("Output: `{}`", str::from_utf8(&out).unwrap());
+            //println!("Output: `{}`", str::from_utf8(&out).unwrap());
             println!("Output decompressed: {}", out.len());
             res.unwrap();
         }
 
     }
     out
-    // use std::io::Read;
-    // use flate2::read::ZlibDecoder;
-    // let mut result = Vec::new();
-    // let mut e = ZlibDecoder::new(input);
+    }
+/*
+    use std::io::Read;
+    use flate2::read::ZlibDecoder;
+    let mut result = Vec::new();
+    let mut e = ZlibDecoder::new(input);
 
-    // let res = e.read_to_end(&mut result);
-    // if let Ok(_) = res {
-    //     // println!("{} bytes read successfully", n);
-    // } else {
-    //     println!("ERROR: Failed to decompress! result size: {}", result.len());
-    //     res.unwrap();
-    // }
-    // result
-
+    let res = e.read_to_end(&mut result);
+    if let Ok(_) = res {
+        // println!("{} bytes read successfully", n);
+    } else {
+        println!("ERROR: Failed to decompress! result size: {}", result.len());
+        res.unwrap();
+    }
+    result*/
 }
 
 fn write_data(file_name: &str, data: &[u8]) {
@@ -129,7 +140,7 @@ fn main() {
     let write = matches.is_present("write");
 
     if path.is_file() {
-        test_file(path, write).unwrap();
+        let _ = test_file(path, write);
     } else if path.is_dir() {
         let mut t = term::stdout().unwrap();
         t.fg(term::color::BRIGHT_GREEN).unwrap_or_default();
@@ -146,10 +157,13 @@ fn main() {
 fn visit_dirs(dir: &Path, write: bool, cb: &Fn(&Path, bool) -> io::Result<()>) -> io::Result<()> {
     if dir.is_dir() {
         for entry in try!(fs::read_dir(dir)) {
+            if entry.is_err() {
+                continue
+            };
             let entry = try!(entry);
             let path = entry.path();
             if path.is_dir() {
-                try!(visit_dirs(&path, write, cb));
+                let _ = (visit_dirs(&path, write, cb));
             } else {
                 cb(&entry.path(), write)?;
             }
@@ -190,8 +204,8 @@ fn test_file(path: &Path, write: bool) -> io::Result<()> {
     {
         print!("Flate2: ");
         let start = Instant::now();
-        let flate2_compressed = {
-            let mut e = flate2::write::ZlibEncoder::new(Vec::new(), Compression::Best);
+        let flate2_compressed =
+            let mut e = flate2::write::ZlibEncoder::new(Vec::new(), Compression::Default);
             e.write_all(&data).unwrap();
             e.finish().unwrap()
         };
@@ -215,7 +229,7 @@ fn test_file(path: &Path, write: bool) -> io::Result<()> {
         print!("Deflate: ");
         let start = Instant::now();
         let compressed_deflate = deflate::deflate_bytes_zlib_conf(&data,
-                                                                  deflate::Compression::Best);
+                                                                  deflate::Compression::Default);
 
         deflate_t = start.elapsed();
 
@@ -235,6 +249,7 @@ fn test_file(path: &Path, write: bool) -> io::Result<()> {
         for (n, (&orig, &dec)) in data.iter().zip(decompressed.iter()).enumerate() {
             if orig != dec {
                 println!("Byte at {} differs: orig: {}, dec: {}", n, orig, dec);
+                println!("Original: {:?}, decoded: {:?}", &data[n..n + 5], &decompressed[n..n+5]);
                 break;
             }
         }

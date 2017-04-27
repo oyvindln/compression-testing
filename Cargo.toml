@@ -13,6 +13,10 @@ inflate = "*"
 #inflate = { path = "../inflate" }
 clap = "2.19"
 term = "0.2"
+pretty_assertions = "*"
 
 [profile.release]
 debug = true
+
+[profile.dev]
+opt-level = 1
