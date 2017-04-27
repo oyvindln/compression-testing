@@ -163,7 +163,7 @@ fn visit_dirs(dir: &Path, write: bool, cb: &Fn(&Path, bool) -> io::Result<()>) -
             let entry = try!(entry);
             let path = entry.path();
             if path.is_dir() {
-                let _ = (visit_dirs(&path, write, cb));
+                let _ = visit_dirs(&path, write, cb);
             } else {
                 cb(&entry.path(), write)?;
             }
@@ -204,7 +204,7 @@ fn test_file(path: &Path, write: bool) -> io::Result<()> {
     {
         print!("Flate2: ");
         let start = Instant::now();
-        let flate2_compressed =
+        let flate2_compressed = {
             let mut e = flate2::write::ZlibEncoder::new(Vec::new(), Compression::Default);
             e.write_all(&data).unwrap();
             e.finish().unwrap()
