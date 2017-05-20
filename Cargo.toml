@@ -4,19 +4,19 @@ version = "0.1.0"
 authors = ["oyvindln <oyvindln@users.noreply.github.com>"]
 
 [dependencies]
-#deflate = { path = "../deflate" }
+#deflate = { path = "../deflate" , features = ["gzip"]}
 deflate = "*"
 #flate2 = { version = "0.2", features = ["zlib"], default-features = false }
 flate2 = "0.2"
 byteorder = "*"
 inflate = "*"
 #inflate = { path = "../inflate" }
-clap = "2.19"
+clap = "2.24"
 term = "0.2"
 pretty_assertions = "*"
 
 [profile.release]
 debug = true
 
-[profile.dev]
-opt-level = 1
+#[profile.dev]
+#opt-level = 1
