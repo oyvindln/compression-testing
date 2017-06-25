@@ -2,10 +2,14 @@ extern crate deflate;
 extern crate flate2;
 extern crate byteorder;
 extern crate inflate;
+extern crate libflate;
 extern crate clap;
 extern crate term;
 
 //#[macro_use] extern crate pretty_assertions;
+
+mod decompress;
+mod shared;
 
 use std::{io, fs};
 use std::path::Path;
@@ -16,6 +20,8 @@ use byteorder::BigEndian;
 use inflate::InflateStream;
 use flate2::Compression;
 use deflate::CompressionOptions;
+
+use shared::Wrapper;
 
 #[derive(Copy, Clone, Debug)]
 pub enum Level {
@@ -28,6 +34,7 @@ impl From<Level> for CompressionOptions {
     fn from(compression: Level) -> CompressionOptions {
         match compression {
             Level::Fast => CompressionOptions::fast(),
+            //Level::Fast => CompressionOptions::rle(),
             Level::Default => CompressionOptions::default(),
             Level::Best => CompressionOptions::high(),
         }
@@ -44,11 +51,19 @@ impl From<Level> for Compression {
     }
 }
 
+#[derive(Copy, Clone, PartialEq, Eq, Debug)]
+pub enum Mode {
+    Compress,
+    Decompress,
+}
+
 #[derive(Copy, Clone, Debug)]
 pub struct Settings {
+    mode: Mode,
     write: bool,
     compare: bool,
     level: Level,
+    wrapper: Wrapper,
 }
 
 
@@ -72,7 +87,7 @@ fn get_file_data(name: &Path) -> Vec<u8> {
 /// Helper function to decompress into a `Vec<u8>`
 fn decompress_to_end(input: &[u8]) -> Vec<u8> {
     use std::str;
-
+/*
     {
         let mut inflater = InflateStream::from_zlib();
         let mut out = Vec::<u8>::new();
@@ -93,11 +108,11 @@ fn decompress_to_end(input: &[u8]) -> Vec<u8> {
         }
         out
     }
-    /*
+    */
     use std::io::Read;
-    use flate2::read::ZlibDecoder;
+    use flate2::read::GzDecoder;
     let mut result = Vec::new();
-    let mut e = ZlibDecoder::new(input);
+    let mut e = GzDecoder::new(input).unwrap();
 
     let res = e.read_to_end(&mut result);
     if let Ok(_) = res {
@@ -106,7 +121,7 @@ fn decompress_to_end(input: &[u8]) -> Vec<u8> {
         println!("ERROR: Failed to decompress! result size: {}", result.len());
         res.unwrap();
     }
-    result*/
+    result
 }
 
 fn write_data(file_name: &str, data: &[u8]) {
@@ -172,6 +187,11 @@ fn main() {
                  .takes_value(true))
         .arg(Arg::with_name("write").short("w").long("write"))
         .arg(Arg::with_name("compare").short("c").long("compare"))
+        .arg(Arg::with_name("decompress").short("d").long("decompress"))
+        .arg(Arg::with_name("wrapper")
+             .takes_value(true)
+             .short("w")
+             .long("wrapper"))
         .arg(Arg::with_name("level")
                  .takes_value(true)
                  .short("l")
@@ -179,6 +199,7 @@ fn main() {
         .get_matches();
 
     let path = Path::new(matches.value_of("PATH").unwrap());
+
     let write = matches.is_present("write");
     let compare = matches.is_present("compare");
     let level = match matches.value_of("level") {
@@ -195,19 +216,47 @@ fn main() {
         }
         None => Level::Default,
     };
+    let mode = if matches.is_present("decompress") {
+        Mode::Decompress
+    } else {
+        Mode::Compress
+    };
+    let wrapper = match matches.value_of("wrapper") {
+        Some(wrapper) => {
+            match wrapper {
+                "zlib" | "Zlib" | "ZLib" => Wrapper::Zlib,
+                "gzip" | "Gzip" | "GZip" | "gz" => Wrapper::Gzip,
+                _ => {
+                    println!("Unknown wrapper: {}, using Zlib", wrapper);
+                    Wrapper::Zlib
+                }
+            }
+        },
+        None => {
+            Wrapper::None
+        }
+    };
 
     println!("Compression test.");
 
     let settings = Settings {
+        mode: mode,
         write: write,
         compare: compare,
         level: level,
+        wrapper: wrapper,
     };
 
     println!("Settings: {:?}", settings);
 
+    let func = if mode == Mode::Decompress {
+        test_decompress
+    } else {
+        test_file
+    };
+
     if path.is_file() {
-        let _ = test_file(path, settings);
+        let _ = func(path, settings);
     } else if path.is_dir() {
         let mut t = term::stdout().unwrap();
         t.fg(term::color::BRIGHT_GREEN).unwrap_or_default();
@@ -215,7 +264,7 @@ fn main() {
         t.reset().unwrap();
         writeln!(t, " {:?} ", path).unwrap();
         drop(t);
-        visit_dirs(path, settings, &test_file).unwrap();
+        visit_dirs(path, settings, &func).unwrap();
     } else {
         println!("Unknown path!");
     }
@@ -239,6 +288,45 @@ fn visit_dirs(dir: &Path,
             }
         }
     }
+    Ok(())
+}
+
+fn compress(data: &[u8], wrapper: Wrapper) -> Vec<u8> {
+    use deflate::{deflate_bytes, deflate_bytes_zlib, deflate_bytes_gzip};
+    match wrapper {
+        Wrapper::None =>{
+            deflate_bytes(data)
+        },
+        Wrapper::Zlib => {
+            deflate_bytes_zlib(data)
+        },
+        Wrapper::Gzip => {
+            deflate_bytes_gzip(data)
+        }
+    }
+}
+
+fn test_decompress(path: &Path, settings: Settings) -> io::Result<()> {
+    use std::io::Write;
+    use term::Attr;
+    use term::color;
+
+    let mut t = term::stdout().unwrap();
+
+    let data = get_file_data(path);
+
+    t.fg(color::BRIGHT_GREEN).unwrap_or_default();
+    write!(t, "\tTesting file:")?;
+    t.reset()?;
+    t.attr(Attr::Bold).unwrap_or_default();
+    write!(t, " {:?} ", path)?;
+    writeln!(t, "Input size: {}", data.len())?;
+    t.reset()?;
+
+    let compressed = compress(&data, settings.wrapper);
+
+    decompress::time_decompress(&compressed, settings.wrapper);
+
     Ok(())
 }
 
@@ -277,7 +365,7 @@ fn test_file(path: &Path, settings: Settings) -> io::Result<()> {
         let noinit;
         let start = Instant::now();
         let flate2_compressed = {
-            let mut e = flate2::write::ZlibEncoder::new(Vec::new(), settings.level.into());
+            let mut e = flate2::write::GzEncoder::new(Vec::new(), settings.level.into());
             noinit = Instant::now();
             e.write_all(&data).unwrap();
             e.finish().unwrap()
@@ -309,7 +397,7 @@ fn test_file(path: &Path, settings: Settings) -> io::Result<()> {
         let noinit;
         let start = Instant::now();
         let compressed_deflate = {
-            let mut e = deflate::write::ZlibEncoder::new(Vec::new(),
+            let mut e = deflate::write::GzEncoder::new(Vec::new(),
                                                          CompressionOptions::from(settings.level));
             noinit = Instant::now();
             e.write_all(&data).unwrap();

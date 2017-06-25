@@ -5,9 +5,10 @@ authors = ["oyvindln <oyvindln@users.noreply.github.com>"]
 
 [dependencies]
 #deflate = { path = "../deflate" , features = ["gzip"]}
-deflate = "*"
+deflate = { version = "0.7" , features = ["gzip"]}
 #flate2 = { version = "0.2", features = ["zlib"], default-features = false }
 flate2 = "0.2"
+libflate = "0.1"
 byteorder = "*"
 inflate = "*"
 #inflate = { path = "../inflate" }
