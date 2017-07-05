@@ -9,6 +9,7 @@ extern crate term;
 //#[macro_use] extern crate pretty_assertions;
 
 mod decompress;
+mod compress;
 mod shared;
 
 use std::{io, fs};
@@ -17,39 +18,9 @@ use clap::{App, Arg};
 use std::time::Instant;
 
 use byteorder::BigEndian;
-use inflate::InflateStream;
-use flate2::Compression;
 use deflate::CompressionOptions;
 
-use shared::Wrapper;
-
-#[derive(Copy, Clone, Debug)]
-pub enum Level {
-    Best,
-    Default,
-    Fast,
-}
-
-impl From<Level> for CompressionOptions {
-    fn from(compression: Level) -> CompressionOptions {
-        match compression {
-            Level::Fast => CompressionOptions::fast(),
-            //Level::Fast => CompressionOptions::rle(),
-            Level::Default => CompressionOptions::default(),
-            Level::Best => CompressionOptions::high(),
-        }
-    }
-}
-
-impl From<Level> for Compression {
-    fn from(compression: Level) -> Compression {
-        match compression {
-            Level::Fast => Compression::Fast,
-            Level::Default => Compression::Default,
-            Level::Best => Compression::Best,
-        }
-    }
-}
+use shared::{Wrapper, Level};
 
 #[derive(Copy, Clone, PartialEq, Eq, Debug)]
 pub enum Mode {
@@ -87,28 +58,7 @@ fn get_file_data(name: &Path) -> Vec<u8> {
 /// Helper function to decompress into a `Vec<u8>`
 fn decompress_to_end(input: &[u8]) -> Vec<u8> {
     use std::str;
-/*
-    {
-        let mut inflater = InflateStream::from_zlib();
-        let mut out = Vec::<u8>::new();
-        let mut n = 0;
-        // println!("input len {}", input.len());
-        while n < input.len() {
-            let res = inflater.update(&input[n..]);
-            if let Ok((num_bytes_read, result)) = res {
-                // println!("result len {}, bytes_read {}", result.len(), num_bytes_read);
-                n += num_bytes_read;
-                out.extend(result);
-            } else {
-                //println!("Output: `{}`", str::from_utf8(&out).unwrap());
-                println!("Output decompressed: {}", out.len());
-                res.unwrap();
-            }
 
-        }
-        out
-    }
-    */
     use std::io::Read;
     use flate2::read::GzDecoder;
     let mut result = Vec::new();
@@ -181,21 +131,21 @@ fn _test_inflate() {
 
 fn main() {
     let matches = App::new("Compression tester")
-        .arg(Arg::with_name("PATH")
-                 .required(true)
-                 .index(1)
-                 .takes_value(true))
+        .arg(Arg::with_name("PATH").required(true).index(1).takes_value(
+            true,
+        ))
         .arg(Arg::with_name("write").short("w").long("write"))
         .arg(Arg::with_name("compare").short("c").long("compare"))
         .arg(Arg::with_name("decompress").short("d").long("decompress"))
-        .arg(Arg::with_name("wrapper")
-             .takes_value(true)
-             .short("w")
-             .long("wrapper"))
-        .arg(Arg::with_name("level")
-                 .takes_value(true)
-                 .short("l")
-                 .long("level"))
+        .arg(
+            Arg::with_name("wrapper")
+                .takes_value(true)
+                .short("t")
+                .long("wrapper"),
+        )
+        .arg(Arg::with_name("level").takes_value(true).short("l").long(
+            "level",
+        ))
         .get_matches();
 
     let path = Path::new(matches.value_of("PATH").unwrap());
@@ -231,10 +181,8 @@ fn main() {
                     Wrapper::Zlib
                 }
             }
-        },
-        None => {
-            Wrapper::None
         }
+        None => Wrapper::None,
     };
 
     println!("Compression test.");
@@ -270,10 +218,11 @@ fn main() {
     }
 }
 
-fn visit_dirs(dir: &Path,
-              settings: Settings,
-              cb: &Fn(&Path, Settings) -> io::Result<()>)
-              -> io::Result<()> {
+fn visit_dirs(
+    dir: &Path,
+    settings: Settings,
+    cb: &Fn(&Path, Settings) -> io::Result<()>,
+) -> io::Result<()> {
     if dir.is_dir() {
         for entry in try!(fs::read_dir(dir)) {
             if entry.is_err() {
@@ -285,6 +234,7 @@ fn visit_dirs(dir: &Path,
                 let _ = visit_dirs(&path, settings, cb);
             } else {
                 cb(&entry.path(), settings)?;
+                println!("-------------------------------------------");
             }
         }
     }
@@ -294,15 +244,9 @@ fn visit_dirs(dir: &Path,
 fn compress(data: &[u8], wrapper: Wrapper) -> Vec<u8> {
     use deflate::{deflate_bytes, deflate_bytes_zlib, deflate_bytes_gzip};
     match wrapper {
-        Wrapper::None =>{
-            deflate_bytes(data)
-        },
-        Wrapper::Zlib => {
-            deflate_bytes_zlib(data)
-        },
-        Wrapper::Gzip => {
-            deflate_bytes_gzip(data)
-        }
+        Wrapper::None => deflate_bytes(data),
+        Wrapper::Zlib => deflate_bytes_zlib(data),
+        Wrapper::Gzip => deflate_bytes_gzip(data),
     }
 }
 
@@ -334,7 +278,6 @@ fn test_file(path: &Path, settings: Settings) -> io::Result<()> {
     use std::io::Write;
     use term::Attr;
     use term::color;
-    use std::time::Duration;
 
     let mut t = term::stdout().unwrap();
 
@@ -349,56 +292,17 @@ fn test_file(path: &Path, settings: Settings) -> io::Result<()> {
     writeln!(t, "Input size: {}", data.len())?;
     t.reset()?;
 
-    let flate_t;
-    let deflate_t;
-    let flate2_size;
-    let deflate_size;
-
-    {
-        // test_flush(&data);
-        // print_runs(&data);
-        // test_inflate();
-    }
-
-    if settings.compare {
-        print!("Flate2: ");
-        let noinit;
-        let start = Instant::now();
-        let flate2_compressed = {
-            let mut e = flate2::write::GzEncoder::new(Vec::new(), settings.level.into());
-            noinit = Instant::now();
-            e.write_all(&data).unwrap();
-            e.finish().unwrap()
-        };
-
-        flate_t = start.elapsed();
-        let flate_t_noinit = noinit.elapsed();
-
-        println!("Time elapsed: {:?}", flate_t);
-        println!("Time (without init: {:?})", flate_t_noinit);
-        println!("Only init: {:?}", flate_t.checked_sub(flate_t_noinit));
-
-        println!("Compressed size: {}, Adler32: {}",
-                 flate2_compressed.len(),
-                 get_adler32(&flate2_compressed));
-        flate2_size = flate2_compressed.len();
-        if settings.write {
-            write_data(&format!("{}.flate2", file_name), &flate2_compressed);
-        }
-    } else {
-        flate_t = Duration::default();
-        flate2_size = 0;
-    }
-
     println!("-");
 
-    {
+    if !settings.compare {
         print!("Deflate: ");
         let noinit;
         let start = Instant::now();
         let compressed_deflate = {
-            let mut e = deflate::write::GzEncoder::new(Vec::new(),
-                                                         CompressionOptions::from(settings.level));
+            let mut e = deflate::write::GzEncoder::new(
+                Vec::new(),
+                CompressionOptions::from(settings.level),
+            );
             noinit = Instant::now();
             e.write_all(&data).unwrap();
             e.finish().unwrap()
@@ -406,18 +310,18 @@ fn test_file(path: &Path, settings: Settings) -> io::Result<()> {
         //deflate::deflate_bytes_zlib_conf(&data,
         //                                 deflate::Compression::Default);
 
-        deflate_t = start.elapsed();
+        let deflate_t = start.elapsed();
         let deflate_t_noinit = noinit.elapsed();
 
         println!("Time elapsed: {:?}", deflate_t);
         println!("Time (without init: {:?})", deflate_t_noinit);
         println!("Only init: {:?}", deflate_t.checked_sub(deflate_t_noinit));
 
-        println!("Compressed size: {}, Adler32: {}",
-                 compressed_deflate.len(),
-                 get_adler32(&compressed_deflate));
-
-        deflate_size = compressed_deflate.len();
+        println!(
+            "Compressed size: {}, Adler32: {}",
+            compressed_deflate.len(),
+            get_adler32(&compressed_deflate)
+        );
 
         if settings.write {
             write_data(&format!("{}.deflate", file_name), &compressed_deflate);
@@ -427,9 +331,11 @@ fn test_file(path: &Path, settings: Settings) -> io::Result<()> {
         for (n, (&orig, &dec)) in data.iter().zip(decompressed.iter()).enumerate() {
             if orig != dec {
                 println!("Byte at {} differs: orig: {}, dec: {}", n, orig, dec);
-                println!("Original: {:?}, decoded: {:?}",
-                         &data[n..n + 5],
-                         &decompressed[n..n + 5]);
+                println!(
+                    "Original: {:?}, decoded: {:?}",
+                    &data[n..n + 5],
+                    &decompressed[n..n + 5]
+                );
                 break;
             }
         }
@@ -437,40 +343,9 @@ fn test_file(path: &Path, settings: Settings) -> io::Result<()> {
         assert_eq!(data.len(), decompressed.len());
 
         assert!(data == decompressed);
+    } else {
+        compress::time_compress(data.as_slice(), settings.wrapper, settings.level);
     }
 
-    if settings.compare {
-
-        println!("-");
-
-        write!(t, "Time difference: ")?;
-
-        if deflate_t > flate_t {
-            t.fg(color::BRIGHT_RED).unwrap_or_default();
-            writeln!(t, "Flate faster: {:?}", deflate_t - flate_t)?;
-        } else if deflate_t < flate_t {
-            t.fg(color::BRIGHT_GREEN).unwrap_or_default();
-            writeln!(t, "Deflate faster: {:?}", flate_t - deflate_t)?;
-        } else {
-            t.fg(color::YELLOW).unwrap_or_default();
-            writeln!(t, "None")?;
-        };
-        t.reset()?;
-
-        write!(t, "Size difference: ")?;
-        let diff = flate2_size as i64 - deflate_size as i64;
-        if diff > 0 {
-            t.fg(color::BRIGHT_GREEN).unwrap_or_default();
-        } else if diff < 0 {
-            t.fg(color::BRIGHT_RED).unwrap_or_default();
-        } else {
-            t.fg(color::YELLOW).unwrap_or_default();
-        };
-        writeln!(t, "{}", -diff)?;
-
-        t.reset()?;
-    }
-
-    println!("-------------------------------------------");
     Ok(())
 }

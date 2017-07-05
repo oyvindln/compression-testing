@@ -1,18 +1,50 @@
 use std::time::Duration;
 use std::convert::From;
+use std::io;
 
-#[derive(Debug,Copy,Clone,PartialEq,Eq)]
+use flate2::Compression;
+use deflate::CompressionOptions;
+
+#[derive(Debug, Copy, Clone, PartialEq, Eq)]
 pub enum Wrapper {
     None,
     Zlib,
-    Gzip
+    Gzip,
 }
 
-#[derive(Debug,Copy,Clone,PartialEq,Eq,PartialOrd,Ord)]
+#[derive(Debug, Copy, Clone, PartialEq, Eq, PartialOrd, Ord)]
 pub enum UsedCrate {
     Flate2,
     LibFlate,
     DeflateInflate,
+}
+
+#[derive(Copy, Clone, Debug)]
+pub enum Level {
+    Best,
+    Default,
+    Fast,
+}
+
+impl From<Level> for CompressionOptions {
+    fn from(compression: Level) -> CompressionOptions {
+        match compression {
+            Level::Fast => CompressionOptions::fast(),
+            //Level::Fast => CompressionOptions::rle(),
+            Level::Default => CompressionOptions::default(),
+            Level::Best => CompressionOptions::high(),
+        }
+    }
+}
+
+impl From<Level> for Compression {
+    fn from(compression: Level) -> Compression {
+        match compression {
+            Level::Fast => Compression::Fast,
+            Level::Default => Compression::Default,
+            Level::Best => Compression::Best,
+        }
+    }
 }
 
 impl From<UsedCrate> for String {
@@ -20,32 +52,23 @@ impl From<UsedCrate> for String {
         match c {
             UsedCrate::Flate2 => "Flate2",
             UsedCrate::LibFlate => "LibFlate",
-            UsedCrate::DeflateInflate => "Deflate or Inflate"
+            UsedCrate::DeflateInflate => "Deflate or Inflate",
         }.into()
     }
 }
 
-#[derive(Debug, Eq, PartialEq, Copy, Clone, PartialOrd, Ord)]
+#[derive(Debug)]
 pub struct BenchResult {
     pub time_used: Option<Duration>,
-    pub size: Option<usize>,
+    pub size: io::Result<usize>,
     pub init_time: Option<Duration>,
-    pub library: UsedCrate,
+    pub library: String,
 }
 
 impl BenchResult {
-    pub fn new(library: UsedCrate) -> BenchResult {
-        BenchResult{
-            library: library,
-            size: None,
-            time_used: None,
-            init_time: None,
-        }
-    }
-
-    pub fn from_result(library: UsedCrate, size: Option<usize>, time_used: Duration) -> BenchResult {
-        BenchResult{
-            library: library,
+    pub fn from_result(library: &str, size: io::Result<usize>, time_used: Duration) -> BenchResult {
+        BenchResult {
+            library: library.to_owned(),
             size: size,
             time_used: Some(time_used),
             init_time: None,
