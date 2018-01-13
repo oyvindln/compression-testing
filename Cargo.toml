@@ -4,17 +4,15 @@ version = "0.1.0"
 authors = ["oyvindln <oyvindln@users.noreply.github.com>"]
 
 [dependencies]
-#deflate = { path = "../deflate" , features = ["gzip"]}
 deflate = { version = "0.7" , features = ["gzip"]}
-#flate2 = { version = "0.2", features = ["zlib"], default-features = false }
-flate2 = "0.2"
+flate2 = "1.0"
 libflate = "0.1"
 byteorder = "*"
 inflate = "*"
-#inflate = { path = "../inflate" }
 clap = "2.24"
 term = "0.2"
 #pretty_assertions = "*"
+miniz_oxide = "0.1.2"
 
 [profile.release]
 debug = true

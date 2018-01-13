@@ -5,6 +5,7 @@ extern crate inflate;
 extern crate libflate;
 extern crate clap;
 extern crate term;
+extern crate miniz_oxide;
 
 //#[macro_use] extern crate pretty_assertions;
 
@@ -57,12 +58,11 @@ fn get_file_data(name: &Path) -> Vec<u8> {
 
 /// Helper function to decompress into a `Vec<u8>`
 fn decompress_to_end(input: &[u8]) -> Vec<u8> {
-    use std::str;
-
     use std::io::Read;
-    use flate2::read::GzDecoder;
+    use flate2::read::DeflateDecoder;
     let mut result = Vec::new();
-    let mut e = GzDecoder::new(input).unwrap();
+    let mut e = DeflateDecoder::new(input);
+    //let mut e = inflate::DeflateDecoder::new(input);
 
     let res = e.read_to_end(&mut result);
     if let Ok(_) = res {
@@ -103,7 +103,7 @@ fn _print_runs(input: &[u8]) {
         }
     }
 }
-
+/*
 fn _test_flush(data: &[u8]) {
     use flate2::{Compress, Compression, Flush, Status};
     let mut c = Compress::new(Compression::Default, true);
@@ -118,7 +118,7 @@ fn _test_flush(data: &[u8]) {
     // println!("Status: {}", s);
     write_data("flush_test.deflate", &v);
 }
-
+*/
 fn _test_inflate() {
     for i in 0..69000 {
         let test = vec![22; i];
@@ -299,7 +299,7 @@ fn test_file(path: &Path, settings: Settings) -> io::Result<()> {
         let noinit;
         let start = Instant::now();
         let compressed_deflate = {
-            let mut e = deflate::write::GzEncoder::new(
+            let mut e = deflate::write::DeflateEncoder::new(
                 Vec::new(),
                 CompressionOptions::from(settings.level),
             );

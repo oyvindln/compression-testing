@@ -21,9 +21,9 @@ pub enum UsedCrate {
 
 #[derive(Copy, Clone, Debug)]
 pub enum Level {
-    Best,
-    Default,
-    Fast,
+    Best = 9,
+    Default = 6,
+    Fast = 1,
 }
 
 impl From<Level> for CompressionOptions {
@@ -40,9 +40,9 @@ impl From<Level> for CompressionOptions {
 impl From<Level> for Compression {
     fn from(compression: Level) -> Compression {
         match compression {
-            Level::Fast => Compression::Fast,
-            Level::Default => Compression::Default,
-            Level::Best => Compression::Best,
+            Level::Fast => Compression::fast(),
+            Level::Default => Compression::default(),
+            Level::Best => Compression::best(),
         }
     }
 }

@@ -8,6 +8,7 @@ where
     F: Fn(&[u8], Wrapper, Level) -> io::Result<usize>,
 {
 
+    println!("Timing: {}", decoder);
     let start = Instant::now();
     let res = func(data, wrapper, level);
     let time = start.elapsed();
@@ -90,12 +91,27 @@ fn compress_libflate(data: &[u8], wrapper: Wrapper, _: Level) -> io::Result<usiz
     }.map(|a| a.len())
 }
 
+fn compress_miniz_oxide(data: &[u8], wrapper: Wrapper, level: Level) -> io::Result<usize>{
+    use miniz_oxide::deflate::{compress_to_vec, compress_to_vec_zlib};
+    match wrapper {
+        Wrapper::None => {
+            Ok(compress_to_vec(data, level as u8).len())
+        },
+        Wrapper::Zlib => {
+            Ok(compress_to_vec_zlib(data, level as u8).len())
+        },
+        Wrapper::Gzip => {
+            Err(io::Error::new(io::ErrorKind::Other, "Not supported!"))
+        }
+    }
+}
 
 pub fn time_compress(data: &[u8], wrapper: Wrapper, level: Level) {
     let mut results = [
-        time_func(data, "deflate", wrapper, level, compress_deflate),
         time_func(data, "flate2", wrapper, level, compress_flate2),
+        time_func(data, "deflate", wrapper, level, compress_deflate),
         time_func(data, "libflate", wrapper, level, compress_libflate),
+        time_func(data, "miniz_oxide", wrapper, level, compress_miniz_oxide),
     ];
 
     results.sort_by(|lhs, rhs| lhs.time_used.cmp(&rhs.time_used));

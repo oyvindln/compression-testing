@@ -21,7 +21,7 @@ fn decompress_flate2(data: &[u8], wrapper: Wrapper) -> io::Result<usize> {
     match wrapper {
         Wrapper::None => DeflateDecoder::new(data).read_to_end(&mut result),
         Wrapper::Zlib => ZlibDecoder::new(data).read_to_end(&mut result),
-        Wrapper::Gzip => GzDecoder::new(data).unwrap().read_to_end(&mut result),
+        Wrapper::Gzip => GzDecoder::new(data).read_to_end(&mut result),
     }
 }
 
@@ -45,15 +45,31 @@ fn decompress_libflate(data: &[u8], wrapper: Wrapper) -> io::Result<usize> {
     }
 }
 
+fn decompress_miniz_oxide(data: &[u8], wrapper: Wrapper) -> io::Result<usize> {
+    use miniz_oxide;
+
+    match wrapper {
+        Wrapper::None => miniz_oxide::inflate::decompress_to_vec(data).map_err(|_| "Failed".to_owned()),
+        Wrapper::Zlib => miniz_oxide::inflate::decompress_to_vec_zlib(data).map_err(|_| "Failed".to_owned()),
+        Wrapper::Gzip => Err("Not supported!".to_owned())
+    }.map(|r| r.len()).map_err(|e| io::Error::new(io::ErrorKind::Other, e))
+}
+
 fn time_func<F>(data: &[u8], decoder: &str, wrapper: Wrapper, func: F) -> BenchResult
 where
     F: Fn(&[u8], Wrapper) -> io::Result<usize>,
 {
-
     let start = Instant::now();
-    let res = func(data, wrapper);
-    let time = start.elapsed();
-    BenchResult::from_result(decoder, res, time)
+    let res = func(data,wrapper);
+    let mut time = start.elapsed();
+
+    for _ in 0..2 {
+        let start = Instant::now();
+        let _ = func(data,wrapper);
+        time += start.elapsed();
+    }
+
+    BenchResult::from_result(decoder,res.map(|o| o),time / 3)
 }
 
 pub fn time_decompress(data: &[u8], wrapper: Wrapper) {
@@ -61,6 +77,7 @@ pub fn time_decompress(data: &[u8], wrapper: Wrapper) {
         time_func(data, "Inflate", wrapper, decompress_inflate),
         time_func(data, "flate2", wrapper, decompress_flate2),
         time_func(data, "libflate", wrapper, decompress_libflate),
+        time_func(data, "miniz_oxide", wrapper, decompress_miniz_oxide),
     ];
 
     results.sort_by(|lhs, rhs| lhs.time_used.cmp(&rhs.time_used));
